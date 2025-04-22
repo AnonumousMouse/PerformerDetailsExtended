@@ -10,6 +10,7 @@ import ItemTotalContent from "@components/ItemTotalContent";
 import ItemTotalPlayDuration from "@components/ItemTotalPlayDuration";
 import { default as cx } from "classnames";
 import "./styles.scss";
+import { DEFAULT_PLUGIN_CONFIG as DEF_PLUGIN_CONF } from "./common/constants";
 
 const { PluginApi } = window;
 const { GQL, React } = PluginApi;
@@ -40,26 +41,29 @@ PluginApi.patch.instead(
 
     // Compile the user's config with config defaults
     const pluginConfig: PDEFinalConfigMap = {
-      additionalStyling: userConfig?.additionalStyling ?? false,
+      additionalStyling: userConfig?.additionalStyling ?? DEF_PLUGIN_CONF.additionalStyling,
       appearsMostWithTagsBlacklist:
-        userConfig?.appearsMostWithTagsBlacklist ?? "",
+        userConfig?.appearsMostWithTagsBlacklist ?? DEF_PLUGIN_CONF.appearsMostWithTagsBlacklist,
       appearsMostWithTagsBlacklistChildren:
-        userConfig?.appearsMostWithTagsBlacklistChildren ?? false,
-      appearsMostWithGendered: userConfig?.appearsMostWithGendered ?? true,
-      maximumTops: userConfig?.maximumTops ?? 3,
-      minimumAppearances: userConfig?.minimumAppearances ?? 2,
-      scenesTimespanReverse: userConfig?.scenesTimespanReverse ?? false,
+        userConfig?.appearsMostWithTagsBlacklistChildren ?? DEF_PLUGIN_CONF.appearsMostWithTagsBlacklistChildren,
+      appearsMostWithGendered:
+        userConfig?.appearsMostWithGendered ?? DEF_PLUGIN_CONF.appearsMostWithGendered,
+      maximumTops: userConfig?.maximumTops ?? DEF_PLUGIN_CONF.maximumTops,
+      minimumAppearances:
+        userConfig?.minimumAppearances ?? DEF_PLUGIN_CONF.minimumAppearances,
+      scenesTimespanReverse:
+        userConfig?.scenesTimespanReverse ?? DEF_PLUGIN_CONF.scenesTimespanReverse,
       showWhenCollapsed:
-        userConfig?.showWhenCollapsed ?? (showAllDetails || false),
-      topNetworkOn: userConfig?.topNetworkOn ?? true,
+        userConfig?.showWhenCollapsed ?? DEF_PLUGIN_CONF.showWhenCollapsed,
+      topNetworkOn: userConfig?.topNetworkOn ?? DEF_PLUGIN_CONF.topNetworkOn,
       topTagsBlacklist: userConfig?.topTagsBlacklist ?? "",
       topTagsBlacklistChildren: userConfig?.topTagsBlacklistChildren ?? false,
-      // For topTagsCount, set to 3 if the value is undefined or 0.
-      topTagsCount: userConfig?.topTagsCount ?? 3,
-      topTagsOn: userConfig?.topTagsOn ?? true,
-      totalPlayCountOn: userConfig?.totalPlayCountOn ?? false,
-      // For minimumScenesForDetails, set to 3 if the value is undefined or 0.
-      minimumScenesForDetails: userConfig?.minimumScenesForDetails ?? 3,
+      topTagsCount: userConfig?.topTagsCount ?? DEF_PLUGIN_CONF.topTagsCount,
+      topTagsOn: userConfig?.topTagsOn ?? DEF_PLUGIN_CONF.topTagsOn,
+      totalPlayCountOn:
+        userConfig?.totalPlayCountOn ?? DEF_PLUGIN_CONF.totalPlayCountOn,
+      minimumScenesForDetails:
+        userConfig?.minimumScenesForDetails ?? DEF_PLUGIN_CONF.minimumScenesForDetails,
     };
 
     const originalComponent = (
@@ -85,27 +89,49 @@ PluginApi.patch.instead(
       },
     });
 
-    const qAllTags = GQL.useFindTagsQuery({
-      variables: {
-        filter: { per_page: -1, sort: "id" },
-      },
-    });
+    // State to track whether the minimumScenesForDetails condition is met
+    const [meetsMinimumScenes, setMeetsMinimumScenes] = React.useState(false);
 
-    const qStudios = GQL.useFindStudiosQuery({
-      variables: {
-        filter: { per_page: -1, sort: "id" },
-        studio_filter: {
-          scenes_filter: {
-            performers: {
-              modifier: CriterionModifier.Includes,
-              value: [performerID],
+    // Compute showDetails before useEffect
+    const showDetails = !collapsed || pluginConfig.showWhenCollapsed;
+
+    // Skip checking scene count if showDetails is false
+    React.useEffect(() => {
+      if (!qScenes.loading && showDetails) {
+        const scenesQueryResult = qScenes.data.findScenes;
+        const totalScenes = scenesQueryResult.scenes.length;
+        setMeetsMinimumScenes(totalScenes >= pluginConfig.minimumScenesForDetails);
+      }
+    }, [qScenes.loading, showDetails]);
+
+    // Conditionally call the queries based on the meetsMinimumScenes state
+    const qAllTags = meetsMinimumScenes
+      ? GQL.useFindTagsQuery({
+          variables: {
+            filter: { per_page: -1, sort: "id" },
+          },
+        })
+      : { loading: false, data: { findTags: [] } };
+
+    const qStudios = meetsMinimumScenes
+      ? GQL.useFindStudiosQuery({
+          variables: {
+            filter: { per_page: -1, sort: "id" },
+            studio_filter: {
+              scenes_filter: {
+                performers: {
+                  modifier: CriterionModifier.Includes,
+                  value: [performerID],
+                },
+              },
             },
           },
-        },
-      },
-    });
+        })
+      : { loading: false, data: { findStudios: [] } };
 
-    const qStats = GQL.useStatsQuery();
+    const qStats = meetsMinimumScenes
+      ? GQL.useStatsQuery()
+      : { loading: false, data: { stats: {} } };
 
     /**
      * Only display the plugin data if:
@@ -119,17 +145,23 @@ PluginApi.patch.instead(
     /** Display as collapsed if currently collapsed, or compact details is
      * `true` in the native config. */
     const isCollapsed = collapsed || !!compactExpandedDetails;
-    const showDetails = !collapsed || pluginConfig.showWhenCollapsed;
 
     // Render the original component and a loading indicator until the required
-    // data is available
-    if (dataLoading && showDetails)
+    // data is available, but only after qScenes has finished loading
+    if (dataLoading && showDetails) {
       return [
         <>
           {originalComponent}
-          <LoadingIndicator card message="Loading extended details..." />
+          if (!qScenes.loading) {
+            // Show a loading indicator if the qScenes query is not loading but everything else is:
+            <LoadingIndicator card message="Loading extended details..." />
+          } else {
+            // Show nothing if the qScenes query is still loading:
+            <div style={{ display: 'none' }}></div>
+          }
         </>,
       ];
+    }
 
     if (dataLoading || !showDetails) return [originalComponent];
 
@@ -141,11 +173,11 @@ PluginApi.patch.instead(
     // Fetch the minimumScenesForDetails value from the plugin configuration
     const minimumScenesForDetails = userConfig?.minimumScenesForDetails ?? 3;
 
-    // Check if the performer's scene count meets the minimum requirement
+    // Query scenes data to get the total number of scenes
     const { scenes } = scenesQueryResult;
     const totalScenes = scenes.length;
 
-
+    // Check if the performer's scene count meets the minimum requirement
     if (totalScenes < minimumScenesForDetails) {
       return [originalComponent];
     }
