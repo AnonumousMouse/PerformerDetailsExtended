@@ -51,6 +51,9 @@ interface PDEConfigMap {
    * percentage total library playtime, instead of total performer play count.
    * Default is off. */
   totalPlayCountOn?: boolean;
+  /** The minimum number of scenes a performer must have for additional details
+   * to be loaded. Default is 3. */
+  minimumScenesForDetails?: number;
 }
 
 interface PDEConfigResult extends ConfigResult {
@@ -74,6 +77,7 @@ interface PDEFinalConfigMap extends PDEConfigMap {
   topTagsCount: number;
   topTagsOn: boolean;
   totalPlayCountOn: boolean;
+  minimumScenesForDetails: number;
 }
 
 interface PluginsConfig {

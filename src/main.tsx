@@ -58,6 +58,8 @@ PluginApi.patch.instead(
       topTagsCount: userConfig?.topTagsCount ?? 3,
       topTagsOn: userConfig?.topTagsOn ?? true,
       totalPlayCountOn: userConfig?.totalPlayCountOn ?? false,
+      // For minimumScenesForDetails, set to 3 if the value is undefined or 0.
+      minimumScenesForDetails: userConfig?.minimumScenesForDetails ?? 3,
     };
 
     const originalComponent = (
@@ -135,6 +137,18 @@ PluginApi.patch.instead(
     const allTagsQueryResult = qAllTags.data.findTags;
     const statsQueryResult = qStats.data.stats;
     const studiosQueryResult = qStudios.data.findStudios;
+
+    // Fetch the minimumScenesForDetails value from the plugin configuration
+    const minimumScenesForDetails = userConfig?.minimumScenesForDetails ?? 3;
+
+    // Check if the performer's scene count meets the minimum requirement
+    const { scenes } = scenesQueryResult;
+    const totalScenes = scenes.length;
+
+
+    if (totalScenes < minimumScenesForDetails) {
+      return [originalComponent];
+    }
 
     /* -------------------------------- Component ------------------------------- */
 
